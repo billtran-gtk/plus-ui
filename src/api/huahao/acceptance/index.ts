@@ -1,6 +1,7 @@
 import request from '@/utils/request';
 import { AxiosPromise } from 'axios';
 import { DemoVO } from '@/api/demo/demo/types';
+import { OracleReceiptDetailVO } from '@/api/huahao/acceptance/types';
 
 /**
  * 查询验收单明细列表
@@ -120,5 +121,21 @@ export const delAcceptanceForm = (id: string | number | Array<string | number>) 
   return request({
     url: '/pda/acceptance/form/' + id,
     method: 'delete'
+  });
+};
+
+/**
+ * 输入或扫描验收单号，直接从 Oracle 查验收单并落地到 MySQL
+ *
+ * 后端的 receiptNo 是 @RequestParam，所以走 query string 而不是请求体。
+ * 失败时后端回 RWithErrorCode，错误码由 request.ts 的拦截器做国际化。
+ *
+ * @param receiptNo 验收单号
+ */
+export const queryFromOracle = (receiptNo: string): AxiosPromise<OracleReceiptDetailVO[]> => {
+  return request({
+    url: '/pda/acceptance/query/oracle',
+    method: 'post',
+    params: { receiptNo }
   });
 };

@@ -128,6 +128,8 @@ service.interceptors.response.use(
     if (res.request.responseType === 'blob' || res.request.responseType === 'arraybuffer') {
       return res.data;
     }
+    // 后端用 RWithErrorCode 回错误码时改取国际化字串，与下方 download() 的做法一致
+    const errMsg = getErrorMessage(res.data, msg);
     if (code === 401) {
       // prettier-ignore
       if (!isRelogin.show) {
@@ -152,13 +154,13 @@ service.interceptors.response.use(
       }
       return Promise.reject('无效的会话，或者会话已过期，请重新登录。');
     } else if (code === HttpStatus.SERVER_ERROR) {
-      ElMessage({ message: msg, type: 'error' });
-      return Promise.reject(new Error(msg));
+      ElMessage({ message: errMsg, type: 'error' });
+      return Promise.reject(new Error(errMsg));
     } else if (code === HttpStatus.WARN) {
-      ElMessage({ message: msg, type: 'warning' });
-      return Promise.reject(new Error(msg));
+      ElMessage({ message: errMsg, type: 'warning' });
+      return Promise.reject(new Error(errMsg));
     } else if (code !== HttpStatus.SUCCESS) {
-      ElNotification.error({ title: msg });
+      ElNotification.error({ title: errMsg });
       return Promise.reject('error');
     } else {
       return Promise.resolve(res.data);
@@ -200,17 +202,7 @@ export function download(url: string, params: any, fileName: string) {
         const rspObj = JSON.parse(resText);
 
         // 检查是否有错误码，如果有则尝试国际化
-        let errMsg = '';
-        if (rspObj.errorCode) {
-          // 尝试从国际化资源中获取错误消息
-          const i18nKey = getErrorI18nKey(rspObj.errorCode);
-          const i18nMsg = window.$t ? window.$t(i18nKey) : null;
-
-          // 如果找到国际化消息且不等于key本身，使用国际化消息，否则使用原始消息
-          errMsg = (i18nMsg && i18nMsg !== i18nKey) ? i18nMsg : (rspObj.msg || errorCode['default']);
-        } else {
-          errMsg = errorCode[rspObj.code] || rspObj.msg || errorCode['default'];
-        }
+        const errMsg = getErrorMessage(rspObj, errorCode[rspObj.code] || rspObj.msg || errorCode['default']);
 
         ElMessage.error(errMsg);
       }
@@ -231,10 +223,30 @@ function getErrorI18nKey(errorCode: string): string {
     'IMPORT_SUCCESS': 'huahao.common.importSuccess',
     'IMPORT_FAILED': 'huahao.common.importFailed',
     'GENERATE_ASN_FILE_FAILED': 'huahao.receiving.generateAsnFileFailed',
-    'NETWORK_FILE_ADD_FAILED': 'huahao.networkFile.networkFileAddFailed'
+    'NETWORK_FILE_ADD_FAILED': 'huahao.networkFile.networkFileAddFailed',
+    // 直接查 Oracle 的验收单查询，ReceivingErrorCode 与 saveBatch 丢出来的两种错误码
+    'ACC_NO_REQUIRED': 'huahao.acceptance.rules.receiptNoRequired',
+    'ACC_NO_NOT_FOUND': 'huahao.acceptance.accNoNotFound',
+    'importDataNullFailed': 'huahao.acceptance.importDataNullFailed',
+    'importDataDiffFailed': 'huahao.acceptance.importDataDiffFailed',
+    'importDataSysFailed': 'huahao.acceptance.importDataSysFailed'
   };
 
   return errorCodeMap[errorCode] || errorCode;
+}
+
+// 后端回了 errorCode 就改用国际化字串，查不到对应的 key 时退回后端原始讯息
+function getErrorMessage(rspObj: any, fallbackMsg: string): string {
+  if (!rspObj || !rspObj.errorCode) {
+    return fallbackMsg;
+  }
+
+  // 尝试从国际化资源中获取错误消息
+  const i18nKey = getErrorI18nKey(rspObj.errorCode);
+  const i18nMsg = window.$t ? window.$t(i18nKey) : null;
+
+  // 如果找到国际化消息且不等于key本身，使用国际化消息，否则使用原始消息
+  return i18nMsg && i18nMsg !== i18nKey ? i18nMsg : fallbackMsg;
 }
 // 导出 axios 实例
 export default service;
