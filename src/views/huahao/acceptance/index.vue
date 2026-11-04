@@ -53,6 +53,9 @@
           <el-col :span="1.5">
             <el-button type="success" plain icon="Upload" @click="handleImport">{{ $t('huahao.common.import') }}</el-button>
           </el-col>
+          <el-col :span="1.5">
+            <el-button type="primary" plain icon="Search" @click="handleOracleQuery">{{ $t('huahao.acceptance.oracleQuery') }}</el-button>
+          </el-col>
           <right-toolbar v-model:show-search="showSearch" @query-table="getList"></right-toolbar>
         </el-row>
       </template>
@@ -88,6 +91,35 @@
           <div class="dialog-footer">
             <el-button :loading="buttonLoading" type="primary" @click="submitImport">{{ $t('huahao.common.confirm') }}</el-button>
             <el-button @click="cancelImport">{{ $t('huahao.common.cancel') }}</el-button>
+          </div>
+        </template>
+      </el-dialog>
+      <!-- 从 Oracle 查验收单对话框 -->
+      <el-dialog
+        v-model="oracleDialog.visible"
+        :title="$t('huahao.acceptance.oracleQueryTitle')"
+        width="500px"
+        append-to-body
+        @opened="focusOracleInput"
+      >
+        <el-form ref="oracleFormRef" :model="oracleForm" :rules="oracleFormRules" label-width="130px">
+          <el-form-item :label="$t('huahao.acceptance.receiptNo')" prop="receiptNo">
+            <el-input
+              ref="oracleReceiptNoRef"
+              v-model="oracleForm.receiptNo"
+              :placeholder="$t('huahao.acceptance.placeholder.oracleReceiptNo')"
+              clearable
+              @keyup.enter="submitOracleQuery"
+            />
+          </el-form-item>
+        </el-form>
+        <div class="el-upload__tip text-center">
+          <div class="text-red">{{ $t('huahao.acceptance.oracleQueryTip') }}</div>
+        </div>
+        <template #footer>
+          <div class="dialog-footer">
+            <el-button :loading="oracleLoading" type="primary" @click="submitOracleQuery">{{ $t('huahao.common.confirm') }}</el-button>
+            <el-button @click="cancelOracleQuery">{{ $t('huahao.common.cancel') }}</el-button>
           </div>
         </template>
       </el-dialog>
@@ -310,7 +342,17 @@
 </template>
 
 <script setup name="Acceptance" lang="ts">
-import { listData, getData, delData, updateData, addData, getAccNoOptions, generatePalletId, generateRcId } from '@/api/huahao/acceptance';
+import {
+  listData,
+  getData,
+  delData,
+  updateData,
+  addData,
+  getAccNoOptions,
+  generatePalletId,
+  generateRcId,
+  queryFromOracle
+} from '@/api/huahao/acceptance';
 import { listReceivingForm, getReceivingForm, delReceivingForm, addReceivingForm, updateReceivingForm } from '@/api/huahao/receivingForm';
 import { globalHeaders } from '@/utils/request';
 import { useI18n } from 'vue-i18n';
@@ -358,6 +400,22 @@ const importDialog = reactive<DialogOption>({
   title: ''
 });
 
+// 从 Oracle 查验收单弹框控制
+const oracleDialog = reactive<DialogOption>({
+  visible: false,
+  title: ''
+});
+
+const oracleLoading = ref(false);
+const oracleFormRef = ref<ElFormInstance>();
+const oracleReceiptNoRef = ref<ElInputInstance>();
+const oracleForm = ref({ receiptNo: '' });
+
+// 从 Oracle 查验收单的表单验证规则
+const oracleFormRules = computed(() => ({
+  receiptNo: [{ required: true, message: t('huahao.acceptance.rules.receiptNoRequired'), trigger: 'blur' }]
+}));
+
 // 上传配置
 const baseUrl = import.meta.env.VITE_APP_BASE_API;
 const uploadUrl = ref(baseUrl + '/pda/acceptance/import');
@@ -403,7 +461,8 @@ const receivingFormRules = computed(() => ({
 const queryParams = ref({
   pageNum: 1,
   pageSize: 10,
-  receiptNo: undefined,
+  // 从 Oracle 查完会把验收单号填回来，所以这里要标出型别，不能让它被推断成 undefined
+  receiptNo: undefined as string | undefined,
   asnNo: undefined,
   partNo: undefined,
   msl: undefined,
@@ -735,6 +794,53 @@ const handleReceivingExport = () => {
 const handleImport = () => {
   importDialog.visible = true;
   importDialog.title = t('huahao.acceptance.importTitle');
+};
+
+/** 打开「从 Oracle 查验收单」对话框 */
+const handleOracleQuery = () => {
+  oracleForm.value.receiptNo = '';
+  oracleFormRef.value?.resetFields();
+  oracleDialog.visible = true;
+  oracleDialog.title = t('huahao.acceptance.oracleQueryTitle');
+};
+
+/** 对话框打开后把光标移到输入框，扫码枪不必先点一下 */
+const focusOracleInput = () => {
+  oracleReceiptNoRef.value?.focus();
+};
+
+/** 输入或扫描验收单号 → 后端查 Oracle → 落地 MySQL */
+const submitOracleQuery = () => {
+  oracleFormRef.value?.validate(async (valid: boolean) => {
+    if (!valid) {
+      return;
+    }
+
+    const receiptNo = oracleForm.value.receiptNo.trim();
+    oracleLoading.value = true;
+    try {
+      const res = await queryFromOracle(receiptNo);
+      const rows = res.data || [];
+      oracleDialog.visible = false;
+      proxy?.$modal.msgSuccess(t('huahao.acceptance.oracleQuerySuccess', { count: rows.length }));
+
+      // 刚落地的验收单要能从下拉框选到，所以选项与列表都得重查
+      await loadAccNoOptions();
+      queryParams.value.receiptNo = receiptNo;
+      queryParams.value.pageNum = 1;
+      await getList();
+    } catch {
+      // 错误讯息已由 request.ts 的拦截器依 errorCode 做过国际化，这里只要让对话框留着重扫
+    } finally {
+      oracleLoading.value = false;
+    }
+  });
+};
+
+/** 取消「从 Oracle 查验收单」 */
+const cancelOracleQuery = () => {
+  oracleDialog.visible = false;
+  oracleLoading.value = false;
 };
 
 /** 下载模板 */

@@ -1,4 +1,43 @@
 /**
+ * 直接从 Oracle 查出来的验收单明细
+ *
+ * 六个字段与后端 OracleReceiptDetailVo 一一对应：
+ * receiptNo / asnNo / partNo / quantity 来自 ERP，msl 来自 EHS 或 WMS，locator 来自 WMS。
+ * 查无 msl 或 locator 时后端回的是空字符串而不是 null。
+ */
+export interface OracleReceiptDetailVO {
+  /**
+   * 验收单号
+   */
+  receiptNo?: string;
+
+  /**
+   * 供应商号
+   */
+  asnNo?: string;
+
+  /**
+   * 料号
+   */
+  partNo?: string;
+
+  /**
+   * 应收数量
+   */
+  quantity?: number;
+
+  /**
+   * 湿敏等级
+   */
+  msl?: string;
+
+  /**
+   * 仓位
+   */
+  locator?: string;
+}
+
+/**
  * 验收单表单对象
  */
 export interface AcceptanceFormVO {
